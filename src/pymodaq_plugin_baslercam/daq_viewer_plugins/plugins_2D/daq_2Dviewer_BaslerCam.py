@@ -1,56 +1,44 @@
-import numpy as np
 from pymodaq.utils.daq_utils import ThreadCommand
 from pymodaq.utils.data import DataFromPlugins, Axis, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.parameter import Parameter
 
 
-class PythonWrapperOfYourInstrument:
-    #  TODO Replace this fake class with the import of the real python wrapper of your instrument
-    pass
+from pymodaq_plugins_baslercam.hardware.basler import Camera
 
-# TODO:
-# (1) change the name of the following class to DAQ_1DViewer_TheNameOfYourChoice
-# (2) change the name of this file to daq_1Dviewer_TheNameOfYourChoice ("TheNameOfYourChoice" should be the SAME
-#     for the class name and the file name.)
-# (3) this file should then be put into the right folder, namely IN THE FOLDER OF THE PLUGIN YOU ARE DEVELOPING:
-#     pymodaq_plugins_my_plugin/daq_viewer_plugins/plugins_1D
-class DAQ_1DViewer_Template(DAQ_Viewer_base):
-    """ Instrument plugin class for a 1D viewer.
-    
-    This object inherits all functionalities to communicate with PyMoDAQ’s DAQ_Viewer module through inheritance via
-    DAQ_Viewer_base. It makes a bridge between the DAQ_Viewer module and the Python wrapper of a particular instrument.
 
-    TODO Complete the docstring of your plugin with:
-        * The set of instruments that should be compatible with this instrument plugin.
-        * With which instrument it has actually been tested.
-        * The version of PyMoDAQ during the test.
-        * The version of the operating system.
-        * Installation instructions: what manufacturer’s drivers should be installed to make it run?
-
+class DAQ_2DViewer_BaslerCam(DAQ_Viewer_base):
+    """ Instrument plugin class for basler cameras.
+        
+        This plugin is to be used with an acA1920-40gm camera, though it like is compatible with others.
     Attributes:
     -----------
     controller: object
         The particular object that allow the communication with the hardware, in general a python wrapper around the
          hardware library.
          
-    # TODO add your particular attributes here if any
 
     """
-    params = comon_parameters+[
-        ## TODO for your custom plugin
-        # elements to be added here as dicts in order to control your custom stage
-        ############
-        ]
+    params = comon_parameters + [
+        {'title': 'Camera:', 'name': 'camera_list', 'type': 'list', 'limits': []},
+        {'title': 'Camera model:', 'name': 'camera_info', 'type': 'str', 'value': '', 'readonly': True},
+        {'title': 'Timing', 'name': 'timing_opts', 'type': 'group', 'children':
+            [{'title': 'Exposure Time (ms)', 'name': 'exposure_time', 'type': 'int', 'value': 1},
+             {'title': 'Compute FPS', 'name': 'fps_on', 'type': 'bool', 'value': True},
+             {'title': 'FPS', 'name': 'fps', 'type': 'float', 'value': 0.0, 'readonly': True}]
+         },
+        {'title': 'Automatic exposure:', 'name': 'auto_exposure', 'type': 'bool', 'value': False},
+        {'title': 'Gain (dB)', 'name': 'gain', 'type': 'float', 'value': 0, 'limits': [0, 239]},
+
+    ]
 
     def ini_attributes(self):
-        #  TODO declare the type of the wrapper (and assign it to self.controller) you're going to use for easy
-        #  autocompletion
-        self.controller: PythonWrapperOfYourInstrument = None
+        self.controller: Camera = None
 
-        # TODO declare here attributes you want/need to init with a default value
 
-        self.x_axis = None
+        #self.x_axis = None
+        #self.y_axis = None
+        #TODO default values?
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -60,11 +48,23 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        ## TODO for your custom plugin
+        # TODO for your custom plugin
         if param.name() == "a_parameter_you've_added_in_self.params":
-           self.controller.your_method_to_apply_this_param_change()
-#        elif ...
-        ##
+            self.controller.your_method_to_apply_this_param_change()
+        #elif ...
+
+    def init_controller(self) -> Camera:
+        camera_list = [cam.GetFriendlyName() for cam in Camera.list_cameras()]
+        params[next((i for i, item in enumerate(params) if item["name"] == "camera_list"), None)]['limits'] = camera_list
+        friendly_name = self.settings["camera_list"]
+        self.emit_status(ThreadCommand('Update_Status', [f"Trying to connect to {friendly_name}", 'log']))
+        camera_list = Camera.list_cameras()
+        for cam in camera_list:
+            if cam.GetFriendlyName() == friendly_name:
+                name = cam.GetFullName()
+                return Camera(name=name, callback=self.callback)
+        self.emit_status(ThreadCommand('Update_Status', ["Camera not found", 'log']))
+        raise ValueError(f"Camera with name {friendly_name} not found anymore.")
 
     def ini_detector(self, controller=None):
         """Detector communication initialization
@@ -81,23 +81,23 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
         initialized: bool
             False if initialization failed otherwise True
         """
-
-        raise NotImplemented  # TODO when writing your own plugin remove this line and modify the one below
         self.ini_detector_init(old_controller=controller,
-                               new_controller=PythonWrapperOfYourInstrument())
+                               new_controller=self.init_controller())
 
         ## TODO for your custom plugin
         # get the x_axis (you may want to to this also in the commit settings if x_axis may have changed
         data_x_axis = self.controller.your_method_to_get_the_x_axis()  # if possible
-        self.x_axis = Axis(data=data_x_axis, label='', units='', index=0)
+        self.x_axis = Axis(data=data_x_axis, label='', units='', index=1)
 
-        # TODO for your custom plugin. Initialize viewers pannel with the future type of data
-        self.dte_signal_temp.emit(DataToExport(name='myplugin',
-                                               data=[DataFromPlugins(name='Mock1',
-                                                                     data=[np.array([0., 0., ...]),
-                                                                           np.array([0., 0., ...])],
-                                                                     dim='Data1D', labels=['Mock1', 'label2'],
-                                                                     axes=[self.x_axis])]))
+        # get the y_axis (you may want to to this also in the commit settings if y_axis may have changed
+        data_y_axis = self.controller.your_method_to_get_the_y_axis()  # if possible
+        self.y_axis = Axis(data=data_y_axis, label='', units='', index=0)
+
+        ## TODO for your custom plugin. Initialize viewers pannel with the future type of data
+        self.dte_signal_temp.emit(DataToExport('myplugin',
+                                               data=[DataFromPlugins(name='Mock1', data=["2D numpy array"],
+                                                                     dim='Data2D', labels=['dat0'],
+                                                                     axes=[self.x_axis, self.y_axis]), ]))
 
         info = "Whatever info you want to log"
         initialized = True
@@ -126,21 +126,22 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
         data_tot = self.controller.your_method_to_start_a_grab_snap()
         self.dte_signal.emit(DataToExport('myplugin',
                                           data=[DataFromPlugins(name='Mock1', data=data_tot,
-                                                                dim='Data1D', labels=['dat0', 'data1'],
-                                                                axes=[self.x_axis])]))
+                                                                dim='Data2D', labels=['label1'],
+                                                                x_axis=self.x_axis,
+                                                                y_axis=self.y_axis), ]))
 
         ##asynchrone version (non-blocking function with callback)
         self.controller.your_method_to_start_a_grab_snap(self.callback)
         #########################################################
-
 
     def callback(self):
         """optional asynchrone method called when the detector has finished its acquisition of data"""
         data_tot = self.controller.your_method_to_get_data_from_buffer()
         self.dte_signal.emit(DataToExport('myplugin',
                                           data=[DataFromPlugins(name='Mock1', data=data_tot,
-                                                                dim='Data1D', labels=['dat0', 'data1'])]))
-
+                                                                dim='Data2D', labels=['label1'],
+                                                                x_axis=self.x_axis,
+                                                                y_axis=self.y_axis), ]))
     def stop(self):
         """Stop the current grab hardware wise if necessary"""
         ## TODO for your custom plugin
